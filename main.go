@@ -1,13 +1,18 @@
 package main
 
+import _ "github.com/lib/pq"
+
 import (
 	"fmt"
-	"github.com/andrei-himself/gator/internal/config"
 	"os"
+	"database/sql"
+	"github.com/andrei-himself/gator/internal/config"
+	"github.com/andrei-himself/gator/internal/database"
 )
 
 type state struct {
-	p *config.Config
+	cfg *config.Config
+	db *database.Queries
 }
 
 type command struct {
@@ -35,7 +40,7 @@ func handlerLogin(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
 		return fmt.Errorf("login command expects username as an argument")
 	}
-	err := s.p.SetUser(cmd.args[0])
+	err := s.cfg.SetUser(cmd.args[0])
 	if err != nil {
 		return err
 	} 
@@ -44,13 +49,21 @@ func handlerLogin(s *state, cmd command) error {
 }
 
 func main() {
-	var cfg state
+	var s state
 	conf, err := config.Read()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	} 
-	cfg.p = &conf
+	s.cfg = &conf
+
+	db, err := sql.Open("postgres", s.cfg.DBURL)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	dbQueries := database.New(db)
+	s.db = dbQueries
 
 	var commands commands
 	commands.m = map[string]func(*state, command) error{}
@@ -67,7 +80,7 @@ func main() {
 		name: name,
 		args: cmdArgs,
 	}
-	err = commands.run(&cfg, cmd)
+	err = commands.run(&s, cmd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

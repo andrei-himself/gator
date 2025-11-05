@@ -5,9 +5,13 @@ import _ "github.com/lib/pq"
 import (
 	"fmt"
 	"os"
+	"time"
+	"errors"
+	"context"
 	"database/sql"
 	"github.com/andrei-himself/gator/internal/config"
 	"github.com/andrei-himself/gator/internal/database"
+	"github.com/google/uuid"
 )
 
 type state struct {
@@ -40,11 +44,42 @@ func handlerLogin(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
 		return fmt.Errorf("login command expects username as an argument")
 	}
-	err := s.cfg.SetUser(cmd.args[0])
+	name := cmd.args[0]
+	_, err := s.db.GetUser(context.Background(), name)
+	if errors.Is(err, sql.ErrNoRows) {
+		fmt.Fprintln(os.Stderr, "username doesn't exist in the database")
+		os.Exit(1)
+	} else if err != nil {
+		return err
+	}
+	err = s.cfg.SetUser(name)
 	if err != nil {
 		return err
 	} 
-	fmt.Println("User has been set!")
+	fmt.Printf("User '%s' has been set!\n", name)
+	return nil
+}
+
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.args) == 0 {
+		return fmt.Errorf("register command expects username as an argument")
+	}
+	name := cmd.args[0]
+	data := database.CreateUserParams{
+		ID : uuid.New(),
+		CreatedAt : time.Now(),
+		UpdatedAt : time.Now(),
+		Name : name,
+	}
+	_, err := s.db.CreateUser(context.Background(), data)
+	if err != nil {
+		return err
+	}
+	err = s.cfg.SetUser(name)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("User '%s' has been regstered!\n", name)
 	return nil
 }
 
@@ -68,6 +103,7 @@ func main() {
 	var commands commands
 	commands.m = map[string]func(*state, command) error{}
 	commands.register("login", handlerLogin)
+	commands.register("register", handlerRegister)
 	args := os.Args
 	if len(args) < 2 {
 		err := fmt.Errorf("Not enough arguments")

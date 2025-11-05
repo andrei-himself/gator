@@ -83,6 +83,32 @@ func handlerRegister(s *state, cmd command) error {
 	return nil
 }
 
+func handlerReset(s *state, cmd command) error {
+	err := s.db.DeleteUsers(context.Background())
+	if err != nil {
+		return err
+	} 
+	fmt.Println("Users deleted successfully!")
+	return nil
+}
+
+func handlerUsers(s *state, cmd command) error {
+	var users []database.User
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	current := s.cfg.CurrentUserName
+	for _, v := range users {
+		if v.Name == current {
+			fmt.Println("*", current, "(current)")
+			continue
+		}
+		fmt.Println("*", v.Name)
+	}
+	return nil
+}
+
 func main() {
 	var s state
 	conf, err := config.Read()
@@ -104,6 +130,8 @@ func main() {
 	commands.m = map[string]func(*state, command) error{}
 	commands.register("login", handlerLogin)
 	commands.register("register", handlerRegister)
+	commands.register("reset", handlerReset)
+	commands.register("users", handlerUsers)
 	args := os.Args
 	if len(args) < 2 {
 		err := fmt.Errorf("Not enough arguments")

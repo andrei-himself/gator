@@ -170,6 +170,16 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.args) == 0 {
+		return fmt.Errorf("follow command expects url as an argument")
+	}
+	url := cmd.args[0]
+
+	username := s.cfg.CurrentUserName
+	
+}
+
 func main() {
 	var s state
 	conf, err := config.Read()
@@ -196,6 +206,7 @@ func main() {
 	commands.register("agg", handlerAgg)
 	commands.register("addfeed", handlerAddfeed)
 	commands.register("feeds", handlerFeeds)
+	commands.register("follow", handlerFollow)
 	args := os.Args
 	if len(args) < 2 {
 		err := fmt.Errorf("Not enough arguments")

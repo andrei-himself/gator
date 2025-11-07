@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"github.com/andrei-himself/gator/internal/config"
 	"github.com/andrei-himself/gator/internal/database"
+	"github.com/andrei-himself/gator/internal/rss"
 	"github.com/google/uuid"
 )
 
@@ -88,7 +89,11 @@ func handlerReset(s *state, cmd command) error {
 	if err != nil {
 		return err
 	} 
-	fmt.Println("Users deleted successfully!")
+	err = s.db.DeleteFeeds(context.Background())
+	if err != nil {
+		return err
+	} 
+	fmt.Println("Users and feeds deleted successfully!")
 	return nil
 }
 
@@ -106,6 +111,62 @@ func handlerUsers(s *state, cmd command) error {
 		}
 		fmt.Println("*", v.Name)
 	}
+	return nil
+}
+
+func handlerAgg(s *state, cmd command) error {
+	feed, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%+v\n", *feed)
+	return nil
+}
+
+func handlerAddfeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		return fmt.Errorf("addfeed command expects name and url as arguments")
+	}
+	name := cmd.args[0]
+	url := cmd.args[1]
+
+	username := s.cfg.CurrentUserName
+	user, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		return err
+	}
+
+	feed := database.CreateFeedParams{
+		ID : uuid.New(),
+		CreatedAt : time.Now(),
+		UpdatedAt : time.Now(),
+		Name : name,
+		Url : url,
+		UserID : user.ID,
+	}
+
+	createdFeed, err := s.db.CreateFeed(context.Background(), feed)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%+v", createdFeed)
+	return nil
+}
+
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, v := range feeds {
+		fmt.Printf("%+v\n", v)
+		user, err := s.db.GetUserByID(context.Background(), v.UserID)
+		if err != nil {
+			return err
+		}
+		fmt.Println(user.Name)
+	}
+	
 	return nil
 }
 
@@ -132,6 +193,9 @@ func main() {
 	commands.register("register", handlerRegister)
 	commands.register("reset", handlerReset)
 	commands.register("users", handlerUsers)
+	commands.register("agg", handlerAgg)
+	commands.register("addfeed", handlerAddfeed)
+	commands.register("feeds", handlerFeeds)
 	args := os.Args
 	if len(args) < 2 {
 		err := fmt.Errorf("Not enough arguments")

@@ -93,7 +93,11 @@ func handlerReset(s *state, cmd command) error {
 	if err != nil {
 		return err
 	} 
-	fmt.Println("Users and feeds deleted successfully!")
+	err = s.db.DeleteFeedFollows(context.Background())
+	if err != nil {
+		return err
+	}
+	fmt.Println("Users, feeds, and feed follows deleted successfully!")
 	return nil
 }
 
@@ -115,11 +119,20 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	feed, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if len(cmd.args) == 0 {
+		return fmt.Errorf("agg command expects time between requests as an argument")
+	}
+	
+	duration, err := time.ParseDuration(cmd.args[0])
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%+v\n", *feed)
+
+	fmt.Printf("Collecting feeds every %v\n", duration)
+	ticker := time.NewTicker(duration)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	} 
 	return nil
 }
 
@@ -143,7 +156,7 @@ func handlerAddfeed(s *state, cmd command, user database.User) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%+v", createdFeed)
+	fmt.Printf("%+v\n", createdFeed)
 
 	followCmd := command{
 		name : "follow",
@@ -241,6 +254,33 @@ func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) 
 
 		return handler(s, cmd, user)
 	}
+}
+
+func scrapeFeeds(s *state) error {
+	nextFeedToFetch, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+
+	markParams := database.MarkFeedFetchedParams{
+		ID : nextFeedToFetch.ID,
+		LastFetchedAt : sql.NullTime{Time: time.Now(), Valid: true},
+	}
+	err = s.db.MarkFeedFetched(context.Background(), markParams)
+	if err != nil {
+		return err
+	}
+	
+	feed, err := rss.FetchFeed(context.Background(), nextFeedToFetch.Url)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range feed.Channel.Item {
+		fmt.Printf("%+v\n", v.Title)
+		
+	}
+	return nil
 }
 
 func main() {

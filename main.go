@@ -8,6 +8,7 @@ import (
 	"time"
 	"errors"
 	"context"
+	"strconv"
 	"database/sql"
 	"github.com/andrei-himself/gator/internal/config"
 	"github.com/andrei-himself/gator/internal/database"
@@ -243,6 +244,26 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	return s.db.DeleteFeedFollow(context.Background(), params)
 }
 
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	var limit int32
+	limit = 2
+	converted, err := strconv.ParseInt(cmd.args[0], 10, 32)
+	if err == nil {
+		limit = int32(converted)
+	}
+
+	posts, err := s.db.GetPostsForUser(context.Background(), limit)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range posts {
+		fmt.Printf("%+v\n", v)
+	}
+
+	return nil
+}
+
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
 	
 	return func(s *state,cmd command) error{
@@ -277,10 +298,44 @@ func scrapeFeeds(s *state) error {
 	}
 
 	for _, v := range feed.Channel.Item {
-		fmt.Printf("%+v\n", v.Title)
-		
+		t, ok := parsePubDate(v.PubDate)
+		if !ok {
+			fmt.Println("no valid publish date for post:\n", v)
+			continue
+		}
+
+		postParams := database.CreatePostParams{
+			ID : uuid.New(),
+			CreatedAt : time.Now(),
+			UpdatedAt : time.Now(),
+			Title : sql.NullString{String: v.Title, Valid: true},
+			Url : v.Link,
+			Description : sql.NullString{String: v.Description, Valid: true},
+			PublishedAt : t,
+			FeedID : nextFeedToFetch.ID,
+		}
+		_, err := s.db.CreatePost(context.Background(), postParams)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func parsePubDate(s string) (time.Time, bool) {
+    layouts := []string{
+        time.RFC1123Z,
+        time.RFC1123,
+        time.RFC822Z,
+        time.RFC822,
+        time.RFC3339,
+    }
+    for _, layout := range layouts {
+        if t, err := time.Parse(layout, s); err == nil {
+            return t, true
+        }
+    }
+    return time.Time{}, false
 }
 
 func main() {
@@ -312,6 +367,7 @@ func main() {
 	commands.register("follow", middlewareLoggedIn(handlerFollow))
 	commands.register("following", middlewareLoggedIn(handlerFollowing))
 	commands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	commands.register("browse", middlewareLoggedIn(handlerBrowse))
 	args := os.Args
 	if len(args) < 2 {
 		err := fmt.Errorf("Not enough arguments")
